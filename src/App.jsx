@@ -32,6 +32,7 @@ export default function App() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [isWorldAdmin, setIsWorldAdmin] = useState(false);
   const [customSalmonValue, setCustomSalmonValue] = useState('');
+  const [customRebirthsValue, setCustomRebirthsValue] = useState('');
   const [rebirths, setRebirths] = useState(0);
   const [globalEvent, setGlobalEvent] = useState({ multiplier: 1, announcement: "", type: "none", active: false });
   const [showWorldAdmin, setShowWorldAdmin] = useState(false);
@@ -44,14 +45,15 @@ export default function App() {
   const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
   const [authForm, setAuthForm] = useState({ username: '', passcode: '' });
   const [isSyncing, setIsSyncing] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   // --- Persistence ---
   const saveGame = useCallback(async (forceData) => {
     const data = forceData || { count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
 
-    // Cloud Sync
-    if (currentUser && !isSyncing) {
+    // Cloud Sync - only if logged in AND data has been loaded from cloud/local at least once
+    if (currentUser && !isSyncing && dataLoaded) {
       try {
         setIsSyncing(true);
         const userDoc = doc(db, 'users', currentUser.username);
@@ -73,13 +75,7 @@ export default function App() {
     const saved = localStorage.getItem(SAVE_KEY);
     const savedUser = localStorage.getItem('salmon_user');
     
-    if (savedUser) {
-      try {
-        const userData = JSON.parse(savedUser);
-        setCurrentUser(userData);
-      } catch(e) {}
-    }
-
+    // 1. Initial Local Load (Fast)
     if (saved) {
       try {
         const data = JSON.parse(saved);
@@ -91,8 +87,39 @@ export default function App() {
         setIsWorldAdmin(data.isWorldAdmin || false);
         setRebirths(data.rebirths || 0);
       } catch (e) {
-        console.error('Failed to load save data', e);
+        console.error('Failed to load local save data', e);
       }
+    }
+
+    // 2. Auth Check & Cloud Sync
+    if (savedUser) {
+      try {
+        const userData = JSON.parse(savedUser);
+        setCurrentUser(userData);
+        
+        // Fetch fresh data from Firestore
+        const fetchCloudData = async () => {
+          const userDoc = doc(db, 'users', userData.username);
+          const snap = await getDoc(userDoc);
+          if (snap.exists()) {
+            const data = snap.data();
+            setCount(data.count);
+            setTotalCount(data.totalCount);
+            setOwnedUpgrades(data.ownedUpgrades);
+            setUnlockedAchievements(data.unlockedAchievements);
+            setRebirths(data.rebirths || 0);
+            // Sync local storage with what we just got
+            localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+          }
+          setDataLoaded(true);
+        };
+        fetchCloudData();
+      } catch(e) {
+        console.error("Failed to sync with cloud on reload", e);
+        setDataLoaded(true);
+      }
+    } else {
+      setDataLoaded(true);
     }
   }, []);
 
@@ -137,10 +164,29 @@ export default function App() {
     return () => clearInterval(interval);
   }, [globalEvent]);
 
+  // Sync World Admin status for 'finn'
+  useEffect(() => {
+    if (currentUser?.username === 'finn') {
+      setIsWorldAdmin(true);
+    } else {
+      setIsWorldAdmin(false);
+    }
+  }, [currentUser]);
+
+  // --- Refs for stable saveGame access ---
+  const gameDataRef = useRef({ count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths });
+  useEffect(() => {
+    gameDataRef.current = { count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths };
+  }, [count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths]);
+
   // Auto-save every 10 seconds or on important actions
   useEffect(() => {
+    if (!dataLoaded) return;
+    
     const timer = setInterval(() => {
-      saveGame();
+      // Use latest data from ref to avoid dependency-triggered resets
+      const data = gameDataRef.current;
+      saveGame(data);
       const indicator = document.getElementById('save-indicator');
       if (indicator) {
         indicator.style.opacity = '1';
@@ -392,6 +438,12 @@ export default function App() {
     }
   };
 
+  const getPendingRebirths = () => {
+    const baseCost = 1000000000 * Math.pow(10, rebirths);
+    if (count < baseCost) return 0;
+    return Math.floor(Math.log10((9 * count) / (baseCost) + 1));
+  };
+
   const formatNumber = (num) => {
     if (num < 1000) return Math.floor(num).toString();
     
@@ -409,16 +461,11 @@ export default function App() {
   const handleCodeSubmit = (e) => {
     e.preventDefault();
     if (codeValue === '6767') {
-      setIsAdminMode(true);
+      const newAdminMode = !isAdminMode;
+      setIsAdminMode(newAdminMode);
       setShowCodes(false);
       setCodeValue('');
-      saveGame({ count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode: true, rebirths, isWorldAdmin });
-    } else if (codeValue === 'salmon67') {
-      setIsWorldAdmin(true);
-      setShowWorldAdmin(true);
-      setShowCodes(false);
-      setCodeValue('');
-      saveGame({ count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, rebirths, isWorldAdmin: true });
+      saveGame({ count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode: newAdminMode, rebirths, isWorldAdmin });
     } else {
       alert('Invalid code!');
     }
@@ -513,13 +560,29 @@ export default function App() {
 
   const applyAdminSalmon = () => {
     const val = parseInt(customSalmonValue);
+    const rebVal = parseInt(customRebirthsValue);
+    
+    let newCount = count;
+    let newTotal = totalCount;
+    let newRebirths = rebirths;
+
     if (!isNaN(val)) {
-      setCount(val);
-      const newTotal = Math.max(totalCount, val);
+      newCount = val;
+      newTotal = Math.max(totalCount, val);
+      setCount(newCount);
       setTotalCount(newTotal);
       setCustomSalmonValue('');
+    }
+
+    if (!isNaN(rebVal)) {
+      newRebirths = rebVal;
+      setRebirths(newRebirths);
+      setCustomRebirthsValue('');
+    }
+
+    if (!isNaN(val) || !isNaN(rebVal)) {
       setShowAdminPanel(false);
-      saveGame({ count: val, totalCount: newTotal, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths });
+      saveGame({ count: newCount, totalCount: newTotal, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths: newRebirths });
     }
   };
 
@@ -568,11 +631,11 @@ export default function App() {
           )}
         </AnimatePresence>
         
-        {/* Top Right Action Buttons */}
-        <div className="absolute top-2 md:top-4 right-2 md:right-4 flex gap-2 z-[250]">
+        {/* Top Left Account Section */}
+        <div className="absolute top-2 md:top-4 left-2 md:left-4 flex gap-2 z-[250]">
           {currentUser ? (
              <div className="flex items-center gap-2 bg-white/80 backdrop-blur-sm border-2 border-[#80DEEA] rounded-2xl px-3 py-1 shadow-sm">
-                <div className="flex flex-col items-end">
+                <div className="flex flex-col items-start text-left">
                    <span className="text-[10px] font-black text-[#006064] uppercase leading-none">{currentUser.username}</span>
                    <span className="text-[8px] text-[#4FC3F7] font-bold">{isSyncing ? 'Syncing...' : 'Cloud Synced'}</span>
                 </div>
@@ -593,7 +656,10 @@ export default function App() {
               <User className="w-4 h-4 md:w-6 md:h-6" />
             </button>
           )}
+        </div>
 
+        {/* Top Right Action Buttons */}
+        <div className="absolute top-2 md:top-4 right-2 md:right-4 flex gap-2 z-[250]">
           {isWorldAdmin && (
             <button 
               onClick={() => setShowWorldAdmin(true)}
@@ -714,7 +780,9 @@ export default function App() {
                   }`}
                 >
                   <History className="w-3 h-3" />
-                  {count >= (1000000000 * Math.pow(10, rebirths) * 1.1) ? 'Rebirth Max' : `Rebirth (${formatNumber(1000000000 * Math.pow(10, rebirths))})`}
+                  {count >= (1000000000 * Math.pow(10, rebirths)) 
+                    ? `Rebirth (+${getPendingRebirths()})` 
+                    : `Rebirth (${formatNumber(1000000000 * Math.pow(10, rebirths))})`}
                 </button>
               </div>
             )}
@@ -1029,14 +1097,28 @@ export default function App() {
                         placeholder="0"
                         className="flex-1 p-4 border-[3px] border-[#FFF9C4] rounded-xl font-[800] text-xl focus:outline-none focus:border-[#FBC02D] text-yellow-700 placeholder:opacity-30"
                       />
-                      <button 
-                        onClick={applyAdminSalmon}
-                        className="px-6 bg-[#FBC02D] text-yellow-900 font-[900] rounded-xl shadow-[0_5px_0_#F9A825] active:translate-y-1 active:shadow-none transition-all uppercase text-sm"
-                      >
-                        Set
-                      </button>
                     </div>
                   </div>
+
+                  <div>
+                    <label className="block text-xs font-[900] text-orange-400 uppercase mb-2 tracking-widest">Set Rebirths</label>
+                    <div className="flex gap-3">
+                      <input 
+                        type="number" 
+                        value={customRebirthsValue}
+                        onChange={(e) => setCustomRebirthsValue(e.target.value)}
+                        placeholder="0"
+                        className="flex-1 p-4 border-[3px] border-orange-100 rounded-xl font-[800] text-xl focus:outline-none focus:border-orange-400 text-orange-700 placeholder:opacity-30"
+                      />
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={applyAdminSalmon}
+                    className="w-full py-4 bg-[#FBC02D] text-yellow-900 font-[900] rounded-xl shadow-[0_5px_0_#F9A825] active:translate-y-1 active:shadow-none transition-all uppercase text-sm"
+                  >
+                    Apply Admin Changes
+                  </button>
                   <div className="pt-4 border-t-2 border-dashed border-yellow-100">
                     <p className="text-[11px] font-black text-yellow-600/40 uppercase text-center leading-relaxed">
                       Developer override active.<br/>Manage the hatchery responsibly.
