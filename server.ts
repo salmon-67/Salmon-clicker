@@ -31,9 +31,11 @@ async function startServer() {
   });
 
   app.post("/api/admin/trigger-event", (req, res) => {
+    console.log("Trigger event request received:", req.body);
     const { password, multiplier, announcement, type, durationMinutes } = req.body;
 
     if (password !== "salmon67") {
+      console.log("Invalid password attempted");
       return res.status(403).json({ error: "Invalid password" });
     }
 

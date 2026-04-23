@@ -362,11 +362,12 @@ export default function App() {
           durationMinutes: worldAdminForm.duration
         })
       });
+      const data = await res.json();
       if (res.ok) {
         alert("Global Event Triggered!");
         setShowWorldAdmin(false);
       } else {
-        alert("Failed to trigger event - check server status");
+        alert("Failed to trigger event: " + (data.error || "Check server status"));
       }
     } catch (e) {
       alert("Error contacting server");
