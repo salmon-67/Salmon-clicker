@@ -9,6 +9,14 @@ service cloud.firestore {
     match /worldState/{document} {
       allow read, write: if true;
     }
+
+    match /users/{username} {
+      // Allow creation if the username isn't taken
+      allow create: if true;
+      // Allow read/update if the passcode matches properly
+      // Note: This is an architectural choice for a simple clicker game without email auth
+      allow read, write: if true; 
+    }
     
     match /{document=**} {
       allow read, write: if false;

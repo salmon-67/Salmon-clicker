@@ -5,10 +5,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Fish, TrendingUp, ShoppingCart, Info, Zap, Waves, History, Trophy, X, Award, ChevronRight, LayoutPanelLeft } from 'lucide-react';
+import { Fish, TrendingUp, ShoppingCart, Info, Zap, Waves, History, Trophy, X, Award, ChevronRight, LayoutPanelLeft, User, LogIn, UserPlus, LogOut, Save, Megaphone } from 'lucide-react';
 import { UPGRADES, NEWS_HEADLINES, ACHIEVEMENTS } from './constants';
 import { db, initFirebase } from './lib/firebase';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc } from 'firebase/firestore';
 
 const SAVE_KEY = 'salmon_clicker_save';
 
@@ -38,14 +38,48 @@ export default function App() {
   const [worldAdminForm, setWorldAdminForm] = useState({ multiplier: 2, announcement: 'RAINING SALMON!', type: 'salmon_rain', duration: 5 });
   const [timeLeft, setTimeLeft] = useState("");
 
+  // --- Account State ---
+  const [currentUser, setCurrentUser] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login'); // 'login' or 'register'
+  const [authForm, setAuthForm] = useState({ username: '', passcode: '' });
+  const [isSyncing, setIsSyncing] = useState(false);
+
   // --- Persistence ---
-  const saveGame = useCallback((forceData) => {
+  const saveGame = useCallback(async (forceData) => {
     const data = forceData || { count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-  }, [count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths]);
+
+    // Cloud Sync
+    if (currentUser && !isSyncing) {
+      try {
+        setIsSyncing(true);
+        const userDoc = doc(db, 'users', currentUser.username);
+        await setDoc(userDoc, {
+          ...data,
+          username: currentUser.username,
+          passcode: currentUser.passcode, // Basic storage for this request
+          lastSaved: Date.now()
+        }, { merge: true });
+        setIsSyncing(false);
+      } catch (e) {
+        console.error("Cloud sync failed", e);
+        setIsSyncing(false);
+      }
+    }
+  }, [count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths, currentUser, isSyncing]);
 
   useEffect(() => {
     const saved = localStorage.getItem(SAVE_KEY);
+    const savedUser = localStorage.getItem('salmon_user');
+    
+    if (savedUser) {
+      try {
+        const userData = JSON.parse(savedUser);
+        setCurrentUser(userData);
+      } catch(e) {}
+    }
+
     if (saved) {
       try {
         const data = JSON.parse(saved);
@@ -149,8 +183,15 @@ export default function App() {
     const base = UPGRADES.reduce((total, upgrade) => {
       return total + upgrade.baseSps * (ownedUpgrades[upgrade.id] || 0);
     }, 0);
-    const eventMult = globalEvent.active ? globalEvent.multiplier : 1;
-    return base * (1 + rebirths * 0.5) * eventMult;
+    
+    let eventSpsMult = 1;
+    if (globalEvent.active) {
+      if (['none', 'salmon_rain', 'hatchery_frenzy', 'golden_tide'].includes(globalEvent.type)) {
+        eventSpsMult = globalEvent.multiplier;
+      }
+    }
+    
+    return base * (1 + rebirths * 0.5) * eventSpsMult;
   }, [ownedUpgrades, rebirths, globalEvent]);
 
   const sps = calculateSps();
@@ -227,8 +268,14 @@ export default function App() {
 
   // --- Actions ---
   const handleSalmonClick = (e) => {
-    const eventMult = globalEvent.active ? globalEvent.multiplier : 1;
-    const clickValue = 1 * (1 + rebirths * 0.5) * eventMult;
+    let clickMult = 1;
+    if (globalEvent.active) {
+      if (['none', 'salmon_rain', 'super_click', 'golden_tide'].includes(globalEvent.type)) {
+        clickMult = globalEvent.multiplier;
+      }
+    }
+    
+    const clickValue = 1 * (1 + rebirths * 0.5) * clickMult;
     setCount((prev) => prev + clickValue);
     setTotalCount((prev) => prev + clickValue);
     playSplosh();
@@ -390,10 +437,60 @@ export default function App() {
         endTime: endTime
       });
       
-      alert("Global Event Triggered in the cloud!");
+      alert("Global Event Triggered!");
       setShowWorldAdmin(false);
     } catch (e) {
-      alert("Error triggering cloud event: " + e.message);
+      alert("Error: " + e.message);
+    }
+  };
+
+  const handleAuth = async (e) => {
+    e.preventDefault();
+    if (!authForm.username || !authForm.passcode) return alert("Fill all fields");
+
+    const userDoc = doc(db, 'users', authForm.username);
+    
+    try {
+      if (authMode === 'register') {
+        const snap = await getDoc(userDoc);
+        if (snap.exists()) return alert("Username taken!");
+        
+        const initialData = {
+          username: authForm.username,
+          passcode: authForm.passcode,
+          count, totalCount, ownedUpgrades, unlockedAchievements, rebirths,
+          lastSaved: Date.now()
+        };
+        await setDoc(userDoc, initialData);
+        setCurrentUser(initialData);
+        localStorage.setItem('salmon_user', JSON.stringify(initialData));
+        alert("Account Created!");
+      } else {
+        const snap = await getDoc(userDoc);
+        if (!snap.exists()) return alert("User not found!");
+        const data = snap.data();
+        if (data.passcode !== authForm.passcode) return alert("Wrong passcode!");
+        
+        // Load data from cloud
+        setCount(data.count);
+        setTotalCount(data.totalCount);
+        setOwnedUpgrades(data.ownedUpgrades);
+        setUnlockedAchievements(data.unlockedAchievements);
+        setRebirths(data.rebirths || 0);
+        setCurrentUser(data);
+        localStorage.setItem('salmon_user', JSON.stringify(data));
+        alert("Welcome Back!");
+      }
+      setShowAuthModal(false);
+    } catch (e) {
+      alert("Auth Error: " + e.message);
+    }
+  };
+
+  const handleLogout = () => {
+    if (confirm("Logout? Your local save will remain.")) {
+      setCurrentUser(null);
+      localStorage.removeItem('salmon_user');
     }
   };
 
@@ -432,6 +529,14 @@ export default function App() {
         {globalEvent.active && globalEvent.type === 'salmon_rain' && (
           <SalmonRain />
         )}
+        {globalEvent.active && globalEvent.type === 'golden_tide' && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 0.2 }} 
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-yellow-400 pointer-events-none z-[50]"
+          />
+        )}
       </AnimatePresence>
 
       <div className="max-w-[1400px] w-full h-full p-3 md:p-6 flex flex-col gap-3 md:gap-4 box-border relative overflow-hidden">
@@ -465,6 +570,30 @@ export default function App() {
         
         {/* Top Right Action Buttons */}
         <div className="absolute top-2 md:top-4 right-2 md:right-4 flex gap-2 z-[250]">
+          {currentUser ? (
+             <div className="flex items-center gap-2 bg-white/80 backdrop-blur-sm border-2 border-[#80DEEA] rounded-2xl px-3 py-1 shadow-sm">
+                <div className="flex flex-col items-end">
+                   <span className="text-[10px] font-black text-[#006064] uppercase leading-none">{currentUser.username}</span>
+                   <span className="text-[8px] text-[#4FC3F7] font-bold">{isSyncing ? 'Syncing...' : 'Cloud Synced'}</span>
+                </div>
+                <button 
+                  onClick={handleLogout}
+                  className="p-1.5 hover:bg-red-50 text-red-400 rounded-lg transition-colors"
+                  title="Logout"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+             </div>
+          ) : (
+            <button 
+              onClick={() => { setAuthMode('login'); setShowAuthModal(true); }}
+              className="p-2 md:p-3 bg-white border-2 md:border-4 border-[#80DEEA] rounded-xl md:rounded-2xl shadow-[0_3px_0_#4DD0E1] md:shadow-[0_5px_0_#4DD0E1] hover:scale-105 active:scale-95 transition-all text-[#00ACC1]"
+              title="Account"
+            >
+              <User className="w-4 h-4 md:w-6 md:h-6" />
+            </button>
+          )}
+
           {isWorldAdmin && (
             <button 
               onClick={() => setShowWorldAdmin(true)}
@@ -919,6 +1048,79 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* Auth Modal */}
+        <AnimatePresence>
+          {showAuthModal && (
+            <motion.div 
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-[#006064]/60 backdrop-blur-sm z-[1500] flex items-center justify-center p-4"
+            >
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }}
+                className="bg-white w-full max-w-md rounded-[32px] border-8 border-[#B2EBF2] shadow-2xl overflow-hidden p-6 md:p-8 relative"
+              >
+                <button 
+                  onClick={() => setShowAuthModal(false)}
+                  className="absolute top-4 right-4 p-2 text-[#006064] hover:bg-[#E0F7FA] rounded-full transition-colors"
+                >
+                  <X />
+                </button>
+
+                <div className="flex flex-col items-center text-center mb-8">
+                  <div className="w-16 h-16 bg-[#E0F7FA] rounded-3xl flex items-center justify-center mb-4 border-4 border-[#80DEEA]">
+                    {authMode === 'login' ? <LogIn className="w-8 h-8 text-[#00ACC1]" /> : <UserPlus className="w-8 h-8 text-[#00ACC1]" />}
+                  </div>
+                  <h2 className="text-2xl md:text-3xl font-black text-[#006064] uppercase tracking-tight">
+                    {authMode === 'login' ? 'Welcome Back' : 'Join the Hatchery'}
+                  </h2>
+                  <p className="text-[#00ACC1] font-bold text-sm">
+                    {authMode === 'login' ? 'Sign in to sync your salmon progress' : 'Create an account to save to the cloud'}
+                  </p>
+                </div>
+
+                <form onSubmit={handleAuth} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-[#006064] uppercase ml-1">Username</label>
+                    <input 
+                      type="text" required
+                      value={authForm.username}
+                      onChange={(e) => setAuthForm({...authForm, username: e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '')})}
+                      className="w-full p-4 bg-slate-50 border-4 border-slate-100 rounded-2xl font-bold focus:border-[#4DD0E1] outline-none transition-all"
+                      placeholder="salmon_king"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-[#006064] uppercase ml-1">Passcode</label>
+                    <input 
+                      type="password" required
+                      value={authForm.passcode}
+                      onChange={(e) => setAuthForm({...authForm, passcode: e.target.value})}
+                      className="w-full p-4 bg-slate-50 border-4 border-slate-100 rounded-2xl font-bold focus:border-[#4DD0E1] outline-none transition-all"
+                      placeholder="••••••"
+                    />
+                  </div>
+
+                  <button 
+                    type="submit"
+                    className="w-full py-4 bg-[#00ACC1] text-white font-black rounded-2xl uppercase shadow-[0_6px_0_#0097A7] hover:-translate-y-1 hover:shadow-[0_8px_0_#0097A7] active:translate-y-1 active:shadow-none transition-all mt-6"
+                  >
+                    {authMode === 'login' ? 'Sign In' : 'Create Account'}
+                  </button>
+                </form>
+
+                <div className="mt-6 text-center">
+                  <button 
+                    onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')}
+                    className="text-[#00ACC1] font-black uppercase text-xs hover:underline"
+                  >
+                    {authMode === 'login' ? "Don't have an account? Register" : "Already have an account? Login"}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* World Admin Modal */}
         <AnimatePresence>
           {showWorldAdmin && (
@@ -992,7 +1194,10 @@ export default function App() {
                       className="w-full p-3 bg-slate-50 border-4 border-slate-100 rounded-xl font-bold appearance-none"
                     >
                       <option value="none">Standard Multiplier</option>
-                      <option value="salmon_rain">Salmon Rain EFFECT</option>
+                      <option value="salmon_rain">Salmon Rain Effect</option>
+                      <option value="super_click">Super Clicks (Click Only)</option>
+                      <option value="hatchery_frenzy">Hatchery Frenzy (SPS Only)</option>
+                      <option value="golden_tide">Golden Tide (All + Visual)</option>
                     </select>
                   </div>
 
@@ -1005,8 +1210,9 @@ export default function App() {
                     </button>
                     <button 
                       onClick={triggerWorldEvent}
-                      className="py-4 bg-yellow-400 text-yellow-900 font-black rounded-2xl uppercase shadow-[0_6px_0_#FBC02D] hover:-translate-y-1 hover:shadow-[0_8px_0_#FBC02D] active:translate-y-1 active:shadow-none transition-all"
+                      className="py-4 bg-yellow-400 text-yellow-900 font-black rounded-2xl uppercase shadow-[0_6px_0_#FBC02D] hover:-translate-y-1 hover:shadow-[0_8px_0_#FBC02D] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2"
                     >
+                      <Zap className="w-5 h-5" />
                       Go Global
                     </button>
                   </div>

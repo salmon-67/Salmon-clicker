@@ -12,12 +12,32 @@
         "endTime": { "type": "number", "description": "Timestamp in milliseconds" }
       },
       "required": ["multiplier", "announcement", "type", "active", "endTime"]
+    },
+    "User": {
+      "title": "User Profile",
+      "description": "User account data and game progress.",
+      "type": "object",
+      "properties": {
+        "username": { "type": "string" },
+        "passcode": { "type": "string" },
+        "count": { "type": "number" },
+        "totalCount": { "type": "number" },
+        "rebirths": { "type": "number" },
+        "ownedUpgrades": { "type": "object" },
+        "unlockedAchievements": { "type": "array" },
+        "lastSaved": { "type": "number" }
+      },
+      "required": ["username", "passcode", "count", "totalCount", "rebirths", "ownedUpgrades", "unlockedAchievements"]
     }
   },
   "firestore": {
     "worldState/current": {
       "schema": "WorldEvent",
       "description": "The currently active world event state."
+    },
+    "users/{username}": {
+      "schema": "User",
+      "description": "Individual user profiles indexed by username."
     }
   }
 }
