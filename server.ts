@@ -37,12 +37,15 @@ async function startServer() {
       return res.status(403).json({ error: "Invalid password" });
     }
 
+    const m = parseFloat(multiplier);
+    const d = parseInt(durationMinutes);
+
     globalEvent = {
-      multiplier: Number(multiplier) || 1,
+      multiplier: isNaN(m) ? 1 : m,
       announcement: announcement || "",
       type: type || "none",
       active: true,
-      endTime: Date.now() + (durationMinutes || 5) * 60 * 1000
+      endTime: Date.now() + (isNaN(d) ? 5 : d) * 60 * 1000
     };
 
     res.json({ success: true, event: globalEvent });

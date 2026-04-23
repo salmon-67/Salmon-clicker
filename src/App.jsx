@@ -28,18 +28,18 @@ export default function App() {
   const [codeValue, setCodeValue] = useState('');
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [isWorldAdmin, setIsWorldAdmin] = useState(false);
   const [customSalmonValue, setCustomSalmonValue] = useState('');
   const [rebirths, setRebirths] = useState(0);
   const [globalEvent, setGlobalEvent] = useState({ multiplier: 1, announcement: "", type: "none", active: false });
   const [showWorldAdmin, setShowWorldAdmin] = useState(false);
-  const [worldAdminPassword, setWorldAdminPassword] = useState('');
   const [worldAdminForm, setWorldAdminForm] = useState({ multiplier: 2, announcement: 'RAINING SALMON!', type: 'salmon_rain', duration: 5 });
 
   // --- Persistence ---
   const saveGame = useCallback((forceData) => {
-    const data = forceData || { count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, rebirths };
+    const data = forceData || { count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-  }, [count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, rebirths]);
+  }, [count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths]);
 
   useEffect(() => {
     const saved = localStorage.getItem(SAVE_KEY);
@@ -51,6 +51,7 @@ export default function App() {
         setOwnedUpgrades(data.ownedUpgrades || Object.fromEntries(UPGRADES.map((u) => [u.id, 0])));
         setUnlockedAchievements(data.unlockedAchievements || []);
         setIsAdminMode(data.isAdminMode || false);
+        setIsWorldAdmin(data.isWorldAdmin || false);
         setRebirths(data.rebirths || 0);
       } catch (e) {
         console.error('Failed to load save data', e);
@@ -308,6 +309,7 @@ export default function App() {
           ownedUpgrades: Object.fromEntries(UPGRADES.map((u) => [u.id, 0])), 
           unlockedAchievements, 
           isAdminMode, 
+          isWorldAdmin,
           rebirths: newRebirths 
         });
         alert(`Congratulations! You have been reborn ${n} time(s). Your production bonus has increased!`);
@@ -335,27 +337,25 @@ export default function App() {
       setIsAdminMode(true);
       setShowCodes(false);
       setCodeValue('');
-      saveGame({ count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode: true, rebirths });
+      saveGame({ count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode: true, rebirths, isWorldAdmin });
     } else if (codeValue === 'salmon67') {
+      setIsWorldAdmin(true);
       setShowWorldAdmin(true);
       setShowCodes(false);
       setCodeValue('');
+      saveGame({ count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, rebirths, isWorldAdmin: true });
     } else {
       alert('Invalid code!');
     }
   };
 
   const triggerWorldEvent = async () => {
-    if (worldAdminPassword !== 'salmon67') {
-      alert("Invalid Password!");
-      return;
-    }
     try {
       const res = await fetch('/api/admin/trigger-event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          password: worldAdminPassword,
+          password: 'salmon67',
           multiplier: worldAdminForm.multiplier,
           announcement: worldAdminForm.announcement,
           type: worldAdminForm.type,
@@ -366,7 +366,7 @@ export default function App() {
         alert("Global Event Triggered!");
         setShowWorldAdmin(false);
       } else {
-        alert("Failed to trigger event");
+        alert("Failed to trigger event - check server status");
       }
     } catch (e) {
       alert("Error contacting server");
@@ -378,7 +378,7 @@ export default function App() {
       const res = await fetch('/api/admin/clear-event', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: worldAdminPassword })
+        body: JSON.stringify({ password: 'salmon67' })
       });
       if (res.ok) {
         alert("Event Cleared!");
@@ -393,10 +393,11 @@ export default function App() {
     const val = parseInt(customSalmonValue);
     if (!isNaN(val)) {
       setCount(val);
-      setTotalCount(Math.max(totalCount, val));
+      const newTotal = Math.max(totalCount, val);
+      setTotalCount(newTotal);
       setCustomSalmonValue('');
       setShowAdminPanel(false);
-      saveGame({ count: val, totalCount: Math.max(totalCount, val), ownedUpgrades, unlockedAchievements, isAdminMode });
+      saveGame({ count: val, totalCount: newTotal, ownedUpgrades, unlockedAchievements, isAdminMode, isWorldAdmin, rebirths });
     }
   };
 
@@ -432,6 +433,24 @@ export default function App() {
         
         {/* Top Right Action Buttons */}
         <div className="absolute top-2 md:top-4 right-2 md:right-4 flex gap-2 z-[250]">
+          {isWorldAdmin && (
+            <button 
+              onClick={() => setShowWorldAdmin(true)}
+              className="p-2 md:p-3 bg-white border-2 md:border-4 border-yellow-400 rounded-xl md:rounded-2xl shadow-[0_3px_0_#FBC02D] md:shadow-[0_5px_0_#FBC02D] hover:scale-105 active:scale-95 transition-all text-yellow-600 animate-pulse"
+              title="Global Events Admin"
+            >
+              <Zap className="w-4 h-4 md:w-6 md:h-6" />
+            </button>
+          )}
+          {isAdminMode && (
+            <button 
+              onClick={() => setShowAdminPanel(true)}
+              className="p-2 md:p-3 bg-white border-2 md:border-4 border-[#FFD54F] rounded-xl md:rounded-2xl shadow-[0_3px_0_#FBC02D] md:shadow-[0_5px_0_#FBC02D] hover:scale-105 active:scale-95 transition-all text-orange-500"
+              title="Salmon Giver Admin"
+            >
+              <Fish className="w-4 h-4 md:w-6 md:h-6" />
+            </button>
+          )}
           <button 
             onClick={() => setShowAchievements(true)}
             className="p-2 md:p-3 bg-white border-2 md:border-4 border-[#FF8C69] rounded-xl md:rounded-2xl shadow-[0_3px_0_#FF7043] md:shadow-[0_5px_0_#FF7043] hover:scale-105 active:scale-95 transition-all text-[#FF7043]"
@@ -831,8 +850,8 @@ export default function App() {
               >
                 <div className="flex justify-between items-center mb-6">
                   <div className="flex items-center gap-3">
-                    <Zap className="w-8 h-8 text-[#FBC02D]" />
-                    <h3 className="text-2xl font-[900] text-[#F9A825] uppercase tracking-wider">Admin Panel</h3>
+                    <Fish className="w-8 h-8 text-orange-500" />
+                    <h3 className="text-2xl font-[900] text-orange-600 uppercase tracking-wider">Salmon Giver</h3>
                   </div>
                   <button onClick={() => setShowAdminPanel(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                     <X className="w-6 h-6 text-[#F9A825]"/>
@@ -943,17 +962,6 @@ export default function App() {
                       <option value="none">Standard Multiplier</option>
                       <option value="salmon_rain">Salmon Rain EFFECT</option>
                     </select>
-                  </div>
-
-                  <div className="space-y-1 pt-2">
-                    <label className="text-[10px] font-black text-[#006064] uppercase ml-1 text-red-500">Security Access Code</label>
-                    <input 
-                      type="password" 
-                      value={worldAdminPassword}
-                      onChange={(e) => setWorldAdminPassword(e.target.value)}
-                      className="w-full p-4 bg-red-50 border-4 border-red-100 rounded-2xl font-black text-center text-xl tracking-[0.5em]"
-                      placeholder="••••••••"
-                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 mt-6">
