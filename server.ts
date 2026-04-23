@@ -12,6 +12,12 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Global Request Logger
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.url}`);
+    next();
+  });
+
   // Global game state (stored in memory for this instance)
   let globalEvent = {
     multiplier: 1,
@@ -30,7 +36,7 @@ async function startServer() {
     res.json(globalEvent);
   });
 
-  app.post("/api/admin/trigger-event", (req, res) => {
+  app.post("/api/events/trigger", (req, res) => {
     console.log("Trigger event request received:", req.body);
     const { password, multiplier, announcement, type, durationMinutes } = req.body;
 
@@ -53,12 +59,18 @@ async function startServer() {
     res.json({ success: true, event: globalEvent });
   });
 
-  app.post("/api/admin/clear-event", (req, res) => {
+  app.post("/api/events/clear", (req, res) => {
     const { password } = req.body;
     if (password !== "salmon67") return res.status(403).json({ error: "Invalid password" });
 
     globalEvent = { multiplier: 1, announcement: "", type: "none", active: false, endTime: 0 };
     res.json({ success: true });
+  });
+
+  // API 404 handler
+  app.use("/api/*", (req, res) => {
+    console.log(`API 404: ${req.method} ${req.url}`);
+    res.status(404).json({ error: `API route not found: ${req.url}` });
   });
 
   // Vite middleware for development

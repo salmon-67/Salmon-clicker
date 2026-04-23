@@ -351,7 +351,7 @@ export default function App() {
 
   const triggerWorldEvent = async () => {
     try {
-      const res = await fetch('/api/admin/trigger-event', {
+      const res = await fetch('/api/events/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -384,7 +384,7 @@ export default function App() {
 
   const clearWorldEvent = async () => {
     try {
-      const res = await fetch('/api/admin/clear-event', {
+      const res = await fetch('/api/events/clear', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: 'salmon67' })
