@@ -609,7 +609,15 @@ export default function App() {
           {globalEvent.active && globalEvent.announcement && (
             <motion.div
               initial={{ y: -100, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
+              animate={{ 
+                y: 0, 
+                opacity: 1,
+                scale: [1, 1.02, 1],
+              }}
+              transition={{
+                scale: { duration: 2, repeat: Infinity, ease: "easeInOut" },
+                default: { type: "spring", stiffness: 300, damping: 20 }
+              }}
               exit={{ y: -100, opacity: 0 }}
               className="absolute top-0 left-1/2 -translate-x-1/2 z-[500] bg-yellow-400 border-4 border-yellow-600 px-8 py-2 rounded-b-3xl shadow-xl flex items-center gap-4"
             >
@@ -760,19 +768,59 @@ export default function App() {
               </div>
             </div>
             
-            <div className="space-y-1">
-              <StatRow label="Caught" value={formatNumber(totalCount)} icon={<Trophy className="w-3 h-3"/>} />
-              <StatRow label="Rebirths" value={rebirths} icon={<History className="w-3 h-3"/>} />
-              <StatRow label="SPS" value={formatNumber(sps)} icon={<Zap className="w-3 h-3 text-yellow-500"/>} />
-              <StatRow label="Rank" value={unlockedAchievements.length >= ACHIEVEMENTS.length ? 'Master' : 'Amateur'} icon={<Award className="w-3 h-3"/>} />
-            </div>
+            <motion.div 
+              initial="hidden"
+              animate="visible"
+              variants={{
+                hidden: { opacity: 0 },
+                visible: {
+                  opacity: 1,
+                  transition: { staggerChildren: 0.1 }
+                }
+              }}
+              className="space-y-1"
+            >
+              {[
+                { label: "Caught", value: formatNumber(totalCount), icon: <Trophy className="w-3 h-3"/> },
+                { label: "Rebirths", value: rebirths, icon: <History className="w-3 h-3"/> },
+                { label: "SPS", value: formatNumber(sps), icon: <Zap className="w-3 h-3 text-yellow-500"/> },
+                { label: "Rank", value: unlockedAchievements.length >= ACHIEVEMENTS.length ? 'Master' : 'Amateur'},
+              ].map((stat, i) => (
+                <motion.div
+                  key={stat.label}
+                  variants={{
+                    hidden: { x: -20, opacity: 0 },
+                    visible: { x: 0, opacity: 1 }
+                  }}
+                >
+                  <StatRow 
+                    label={stat.label} 
+                    value={stat.value} 
+                    icon={stat.icon || <Award className="w-3 h-3"/>} 
+                  />
+                </motion.div>
+              ))}
+            </motion.div>
 
             {totalCount >= 1000000000 && (
-              <div className="mt-4 flex flex-col gap-2">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="mt-4 flex flex-col gap-2"
+              >
                 <div className="text-[10px] font-black text-[#006064] uppercase text-center opacity-60">Cycle of Life</div>
-                <button 
+                <motion.button 
                   onClick={performRebirth}
                   disabled={count < (1000000000 * Math.pow(10, rebirths))}
+                  animate={count >= (1000000000 * Math.pow(10, rebirths)) ? {
+                    scale: [1, 1.05, 1],
+                    boxShadow: [
+                      "0 4px 0 #D84315",
+                      "0 8px 15px rgba(216, 67, 21, 0.4)",
+                      "0 4px 0 #D84315"
+                    ]
+                  } : {}}
+                  transition={{ repeat: Infinity, duration: 1.5 }}
                   className={`py-2 px-4 rounded-xl border-2 font-black text-xs uppercase transition-all flex items-center justify-center gap-2 ${
                     count >= (1000000000 * Math.pow(10, rebirths))
                     ? 'bg-[#FF7043] border-white text-white shadow-[0_4px_0_#D84315] hover:scale-105 active:scale-95 active:shadow-none'
@@ -783,8 +831,8 @@ export default function App() {
                   {count >= (1000000000 * Math.pow(10, rebirths)) 
                     ? `Rebirth (+${getPendingRebirths()})` 
                     : `Rebirth (${formatNumber(1000000000 * Math.pow(10, rebirths))})`}
-                </button>
-              </div>
+                </motion.button>
+              </motion.div>
             )}
 
             <div className="mt-4 bg-[#FFEE58] p-3 rounded-[8px] border-[2px] border-[#FBC02D] text-center shadow-inner">
@@ -932,38 +980,55 @@ export default function App() {
             </div>
 
             <div className="flex-1 overflow-y-auto pr-1 pb-4 space-y-2.5 custom-scrollbar">
-              {UPGRADES.map((upgrade) => {
-                const owned = ownedUpgrades[upgrade.id] || 0;
-                const cost = getMultiBuyTotalCost(upgrade, multiBuyAmount);
-                const canAfford = count >= cost;
+              <motion.div
+                initial="hidden"
+                animate="visible"
+                variants={{
+                  hidden: { opacity: 0 },
+                  visible: {
+                    opacity: 1,
+                    transition: { staggerChildren: 0.05 }
+                  }
+                }}
+                className="space-y-2.5"
+              >
+                {UPGRADES.map((upgrade) => {
+                  const owned = ownedUpgrades[upgrade.id] || 0;
+                  const cost = getMultiBuyTotalCost(upgrade, multiBuyAmount);
+                  const canAfford = count >= cost;
 
-                return (
-                  <motion.button
-                    key={upgrade.id}
-                    whileHover={canAfford ? { scale: 1.02, x: 4 } : {}}
-                    whileTap={canAfford ? { scale: 0.98 } : {}}
-                    onClick={() => buyUpgrade(upgrade)}
-                    disabled={!canAfford}
-                    className={`
-                      w-full bg-white rounded-[16px] p-2.5 md:p-3 flex items-center border-[3px] transition-all group shrink-0
-                      ${canAfford ? 'border-[#B2EBF2] shadow-sm cursor-pointer' : 'border-slate-200 opacity-60 grayscale cursor-not-allowed'}
-                    `}
-                  >
-                    <div className="w-[40px] md:w-[50px] h-[40px] md:h-[50px] bg-[#FFAB91] rounded-[10px] md:rounded-[12px] flex items-center justify-center text-xl md:text-2xl shrink-0 mr-3 shadow-sm group-hover:rotate-6 transition-transform">
-                      {upgrade.icon}
-                    </div>
-                    <div className="flex-1 text-left min-w-0">
-                      <div className="font-[700] text-[14px] md:text-[16px] text-[#37474F] truncate tracking-tight">{upgrade.name}</div>
-                      <div className="text-[12px] md:text-[14px] font-[800] text-[#FF7043] leading-none mt-0.5">
-                        Cost: {formatNumber(cost)}
+                  return (
+                    <motion.button
+                      key={upgrade.id}
+                      variants={{
+                        hidden: { y: 20, opacity: 0 },
+                        visible: { y: 0, opacity: 1 }
+                      }}
+                      whileHover={canAfford ? { scale: 1.02, x: 4 } : {}}
+                      whileTap={canAfford ? { scale: 0.98 } : {}}
+                      onClick={() => buyUpgrade(upgrade)}
+                      disabled={!canAfford}
+                      className={`
+                        w-full bg-white rounded-[16px] p-2.5 md:p-3 flex items-center border-[3px] transition-all group shrink-0
+                        ${canAfford ? 'border-[#B2EBF2] shadow-sm cursor-pointer' : 'border-slate-200 opacity-60 grayscale cursor-not-allowed'}
+                      `}
+                    >
+                      <div className="w-[40px] md:w-[50px] h-[40px] md:h-[50px] bg-[#FFAB91] rounded-[10px] md:rounded-[12px] flex items-center justify-center text-xl md:text-2xl shrink-0 mr-3 shadow-sm group-hover:rotate-6 transition-transform">
+                        {upgrade.icon}
                       </div>
-                    </div>
-                    <div className="text-[18px] md:text-[20px] font-[900] text-[#0097A7] ml-2 leading-none">
-                      {owned}
-                    </div>
-                  </motion.button>
-                );
-              })}
+                      <div className="flex-1 text-left min-w-0">
+                        <div className="font-[700] text-[14px] md:text-[16px] text-[#37474F] truncate tracking-tight">{upgrade.name}</div>
+                        <div className="text-[12px] md:text-[14px] font-[800] text-[#FF7043] leading-none mt-0.5">
+                          Cost: {formatNumber(cost)}
+                        </div>
+                      </div>
+                      <div className="text-[18px] md:text-[20px] font-[900] text-[#0097A7] ml-2 leading-none">
+                        {owned}
+                      </div>
+                    </motion.button>
+                  );
+                })}
+              </motion.div>
             </div>
           </aside>
         </div>

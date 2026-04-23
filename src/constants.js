@@ -84,6 +84,30 @@ export const UPGRADES = [
     baseSps: 800000,
     icon: '🌌',
   },
+  {
+    id: 'quantum',
+    name: 'Quantum Spawner',
+    description: 'Salmon exists in every possible location simultaneously.',
+    baseCost: 350000000000,
+    baseSps: 5000000,
+    icon: '⚛️',
+  },
+  {
+    id: 'infinite',
+    name: 'Infinite River Loop',
+    description: 'A Mobius-strip river that flows back into itself forever.',
+    baseCost: 5000000000000,
+    baseSps: 35000000,
+    icon: '♾️',
+  },
+  {
+    id: 'ascended',
+    name: 'Salmon Singularity',
+    description: 'The moment where salmon and the universe become one.',
+    baseCost: 75000000000000,
+    baseSps: 250000000,
+    icon: '👁️',
+  },
 ];
 
 export const NEWS_HEADLINES = [
