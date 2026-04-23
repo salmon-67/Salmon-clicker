@@ -362,15 +362,23 @@ export default function App() {
           durationMinutes: worldAdminForm.duration
         })
       });
-      const data = await res.json();
       if (res.ok) {
+        const data = await res.json();
         alert("Global Event Triggered!");
         setShowWorldAdmin(false);
       } else {
-        alert("Failed to trigger event: " + (data.error || "Check server status"));
+        const text = await res.text();
+        let errorMsg = "Check server status";
+        try {
+          const data = JSON.parse(text);
+          errorMsg = data.error || errorMsg;
+        } catch(e) {
+          errorMsg = "Non-JSON response: " + text.substring(0, 50);
+        }
+        alert(`Failed to trigger event (Status ${res.status}): ${errorMsg}`);
       }
     } catch (e) {
-      alert("Error contacting server");
+      alert("Error contacting server: " + e.message);
     }
   };
 
@@ -384,9 +392,12 @@ export default function App() {
       if (res.ok) {
         alert("Event Cleared!");
         setShowWorldAdmin(false);
+      } else {
+        const text = await res.text();
+        alert(`Failed to clear (Status ${res.status}): ${text.substring(0, 50)}`);
       }
     } catch (e) {
-      alert("Error contacting server");
+      alert("Error contacting server: " + e.message);
     }
   };
 
