@@ -14,8 +14,13 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Global Request Logger
+  // Global Request Logger & No-Cache for API
   app.use((req, res, next) => {
+    if (req.url.startsWith('/api')) {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
     if (!req.url.includes('internal')) {
       console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
     }
@@ -74,16 +79,18 @@ async function startServer() {
   // Mount API router FIRST
   app.use("/api", apiRouter);
 
-  // Production Setup
-  if (process.env.NODE_ENV === "production") {
+  // Production Setup - Support automated environments
+  const isProd = process.env.NODE_ENV === "production" || process.env.SHARED === "true";
+  if (isProd) {
     const distPath = path.resolve(__dirname, 'dist');
-    console.log(`Serving static files from: ${distPath}`);
+    console.log(`PRODUCTION MODE: Serving static files from: ${distPath}`);
     
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
       if (!req.url.startsWith('/api')) {
         res.sendFile(path.resolve(distPath, 'index.html'));
       } else {
+        console.log(`API 404 falling through to catch-all: ${req.url}`);
         res.status(404).json({ error: "API route not found" });
       }
     });
@@ -96,8 +103,12 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server listening on 0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server successfully listening on 0.0.0.0:${PORT}`);
+  });
+
+  server.on('error', (err) => {
+    console.error('SERVER ERROR:', err);
   });
 }
 
