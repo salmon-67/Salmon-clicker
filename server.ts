@@ -18,6 +18,8 @@ async function startServer() {
     next();
   });
 
+  app.get("/ping", (req, res) => res.send("pong"));
+
   // Global game state (stored in memory for this instance)
   let globalEvent = {
     multiplier: 1,
@@ -27,8 +29,9 @@ async function startServer() {
     endTime: 0
   };
 
-  // API Routes
-  app.get("/api/global-event", (req, res) => {
+  const apiRouter = express.Router();
+
+  apiRouter.get("/global-event", (req, res) => {
     // If event has expired, reset it
     if (globalEvent.active && Date.now() > globalEvent.endTime) {
       globalEvent = { multiplier: 1, announcement: "", type: "none", active: false, endTime: 0 };
@@ -36,7 +39,12 @@ async function startServer() {
     res.json(globalEvent);
   });
 
-  app.post("/api/events/trigger", (req, res) => {
+  // Diagnostic GET route
+  apiRouter.get("/events/trigger", (req, res) => {
+    res.json({ message: "API Trigger endpoint reachable. Use POST to trigger an event." });
+  });
+
+  apiRouter.post("/events/trigger", (req, res) => {
     console.log("Trigger event request received:", req.body);
     const { password, multiplier, announcement, type, durationMinutes } = req.body;
 
@@ -59,7 +67,7 @@ async function startServer() {
     res.json({ success: true, event: globalEvent });
   });
 
-  app.post("/api/events/clear", (req, res) => {
+  apiRouter.post("/events/clear", (req, res) => {
     const { password } = req.body;
     if (password !== "salmon67") return res.status(403).json({ error: "Invalid password" });
 
@@ -67,10 +75,13 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Attach router
+  app.use("/api", apiRouter);
+
   // API 404 handler
   app.use("/api/*", (req, res) => {
-    console.log(`API 404: ${req.method} ${req.url}`);
-    res.status(404).json({ error: `API route not found: ${req.url}` });
+    console.log(`API 404: ${req.method} ${req.originalUrl}`);
+    res.status(404).json({ error: `API route not found: ${req.originalUrl}` });
   });
 
   // Vite middleware for development
