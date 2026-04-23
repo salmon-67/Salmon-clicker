@@ -15,7 +15,7 @@ export const UPGRADES = [
   {
     id: 'rod',
     name: 'Auto-Rod',
-    description: 'A high-tech fishing rod that casts itself.',
+    description: 'A high-tech fishing rod that catches itself.',
     baseCost: 100,
     baseSps: 5,
     icon: '🎣',
@@ -45,12 +45,44 @@ export const UPGRADES = [
     icon: '🏭',
   },
   {
+    id: 'trawler',
+    name: 'Ocean Trawler',
+    description: 'A massive vessel harvesting the deep currents.',
+    baseCost: 1450000,
+    baseSps: 1500,
+    icon: '🚢',
+  },
+  {
     id: 'portal',
     name: 'River Portal',
     description: 'Summons salmon from parallel river dimensions.',
-    baseCost: 1400000,
-    baseSps: 1200,
+    baseCost: 15500000,
+    baseSps: 6500,
     icon: '🌀',
+  },
+  {
+    id: 'moon',
+    name: 'Lunar Tide Control',
+    description: 'Control the tides to bring all salmon to your door.',
+    baseCost: 180000000,
+    baseSps: 25000,
+    icon: '🌙',
+  },
+  {
+    id: 'dna',
+    name: 'DNA Sculptor',
+    description: 'Rewrite the code of life for maximum salmon density.',
+    baseCost: 2000000000,
+    baseSps: 120000,
+    icon: '🧬',
+  },
+  {
+    id: 'galaxy',
+    name: 'Galactic Stream',
+    description: 'The entire Milky Way is now a salmon habitat.',
+    baseCost: 25000000000,
+    baseSps: 800000,
+    icon: '🌌',
   },
 ];
 
@@ -63,6 +95,8 @@ export const NEWS_HEADLINES = [
   "Salmon migration delayed due to 'unforeseen underwater construction'.",
   "Ancient Salmon Prophecy fulfilled: 'The Great Clicker' has arrived.",
   "Underwater DJ 'DJ Fin' drops new single: 'Scale of the Century'.",
+  "Salmon starts a startup called 'Spawn-ly Fans', stock prices soar.",
+  "Intergalactic salmon union demands more oxygen in the vacuum of space.",
 ];
 
 export const ACHIEVEMENTS = [
@@ -95,5 +129,29 @@ export const ACHIEVEMENTS = [
     name: 'Hatchery Tycoon',
     description: 'You own a piece of the industrial salmon future.',
     icon: '👑',
+  },
+  {
+    id: 'millionaire',
+    name: 'Millionaire',
+    description: 'One million salmon in the records.',
+    icon: '💎',
+  },
+  {
+    id: 'billionaire',
+    name: 'Billionaire',
+    description: 'A billion salmon. You are the river king.',
+    icon: '🔱',
+  },
+  {
+    id: 'rebirth_1',
+    name: 'New Life',
+    description: 'Experienced your first rebirth.',
+    icon: '🥚',
+  },
+  {
+    id: 'rebirth_5',
+    name: 'Evolutionary Cycle',
+    description: 'Reborn five times over.',
+    icon: '♾️',
   },
 ];

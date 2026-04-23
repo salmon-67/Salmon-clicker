@@ -29,12 +29,17 @@ export default function App() {
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [customSalmonValue, setCustomSalmonValue] = useState('');
+  const [rebirths, setRebirths] = useState(0);
+  const [globalEvent, setGlobalEvent] = useState({ multiplier: 1, announcement: "", type: "none", active: false });
+  const [showWorldAdmin, setShowWorldAdmin] = useState(false);
+  const [worldAdminPassword, setWorldAdminPassword] = useState('');
+  const [worldAdminForm, setWorldAdminForm] = useState({ multiplier: 2, announcement: 'RAINING SALMON!', type: 'salmon_rain', duration: 5 });
 
   // --- Persistence ---
   const saveGame = useCallback((forceData) => {
-    const data = forceData || { count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode };
+    const data = forceData || { count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, rebirths };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-  }, [count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode]);
+  }, [count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode, rebirths]);
 
   useEffect(() => {
     const saved = localStorage.getItem(SAVE_KEY);
@@ -46,10 +51,27 @@ export default function App() {
         setOwnedUpgrades(data.ownedUpgrades || Object.fromEntries(UPGRADES.map((u) => [u.id, 0])));
         setUnlockedAchievements(data.unlockedAchievements || []);
         setIsAdminMode(data.isAdminMode || false);
+        setRebirths(data.rebirths || 0);
       } catch (e) {
         console.error('Failed to load save data', e);
       }
     }
+  }, []);
+
+  // --- Server Polling for Global Events ---
+  useEffect(() => {
+    const fetchGlobalEvent = async () => {
+      try {
+        const res = await fetch('/api/global-event');
+        const data = await res.json();
+        setGlobalEvent(data);
+      } catch (e) {
+        // Silently fail if server is still starting
+      }
+    };
+    fetchGlobalEvent();
+    const timer = setInterval(fetchGlobalEvent, 5000);
+    return () => clearInterval(timer);
   }, []);
 
   // Auto-save every 10 seconds or on important actions
@@ -95,10 +117,12 @@ export default function App() {
 
   // --- Calculations ---
   const calculateSps = useCallback(() => {
-    return UPGRADES.reduce((total, upgrade) => {
+    const base = UPGRADES.reduce((total, upgrade) => {
       return total + upgrade.baseSps * (ownedUpgrades[upgrade.id] || 0);
     }, 0);
-  }, [ownedUpgrades]);
+    const eventMult = globalEvent.active ? globalEvent.multiplier : 1;
+    return base * (1 + rebirths * 0.5) * eventMult;
+  }, [ownedUpgrades, rebirths, globalEvent]);
 
   const sps = calculateSps();
 
@@ -117,9 +141,13 @@ export default function App() {
 
       if (totalCount >= 1) tryUnlock('first_click');
       if (totalCount >= 100) tryUnlock('century_caught');
+      if (totalCount >= 1000000) tryUnlock('millionaire');
+      if (totalCount >= 1000000000) tryUnlock('billionaire');
       if (ownedUpgrades['bear'] >= 1) tryUnlock('bear_friend');
       if (calculateSps() >= 10) tryUnlock('sps_10');
       if (ownedUpgrades['hatchery'] >= 1) tryUnlock('hatchery_tycoon');
+      if (rebirths >= 1) tryUnlock('rebirth_1');
+      if (rebirths >= 5) tryUnlock('rebirth_5');
 
       if (newUnlocks.length > 0) {
         setUnlockedAchievements(prev => [...prev, ...newUnlocks]);
@@ -128,7 +156,7 @@ export default function App() {
     };
 
     checkAchievements();
-  }, [totalCount, ownedUpgrades, calculateSps, unlockedAchievements, saveGame]);
+  }, [totalCount, ownedUpgrades, calculateSps, unlockedAchievements, saveGame, rebirths]);
 
   useEffect(() => {
     if (lastNotification) {
@@ -149,6 +177,18 @@ export default function App() {
     return () => clearInterval(interval);
   }, [calculateSps]);
 
+  // Keyboard Support
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handleSalmonClick();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [count]); // Trigger on count so handleSalmonClick has closure (though better use functional updates)
+
   useEffect(() => {
     const newsInterval = setInterval(() => {
       setNewsIndex((prev) => (prev + 1) % NEWS_HEADLINES.length);
@@ -158,14 +198,21 @@ export default function App() {
 
   // --- Actions ---
   const handleSalmonClick = (e) => {
-    const clickValue = 1;
+    const eventMult = globalEvent.active ? globalEvent.multiplier : 1;
+    const clickValue = 1 * (1 + rebirths * 0.5) * eventMult;
     setCount((prev) => prev + clickValue);
     setTotalCount((prev) => prev + clickValue);
     playSplosh();
 
-    const rect = e.currentTarget.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
+    let centerX, centerY;
+    if (e && e.currentTarget) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      centerX = rect.left + rect.width / 2;
+      centerY = rect.top + rect.height / 2;
+    } else {
+      centerX = window.innerWidth / 2;
+      centerY = window.innerHeight / 2;
+    }
 
     // Spawn multiple particles for an "explosion"
     const particleCount = 5;
@@ -211,7 +258,7 @@ export default function App() {
       setCount((prev) => prev - cost);
       setOwnedUpgrades((prev) => ({
         ...prev,
-        [upgrade.id]: prev[upgrade.id] + multiBuyAmount
+        [upgrade.id]: (prev[upgrade.id] || 0) + multiBuyAmount
       }));
       saveGame();
     }
@@ -222,10 +269,6 @@ export default function App() {
     const newOwned = { ...ownedUpgrades };
     let changed = false;
     
-    // Sort upgrades by cost (base cost) or just iterate
-    // Usually buying cheaper ones first is better for some, 
-    // but the request is "for each available upgrade", 
-    // implying it should try to buy as many as possible overall.
     UPGRADES.forEach(upgrade => {
       let canBuyMore = true;
       while (canBuyMore) {
@@ -248,10 +291,42 @@ export default function App() {
     }
   };
 
+  const performRebirth = () => {
+    const baseCost = 1000000000 * Math.pow(10, rebirths);
+    if (count >= baseCost) {
+      // Calculate max rebirths buyable: n = floor(log10((9 * Cash) / (BaseCost) + 1))
+      const n = Math.floor(Math.log10((9 * count) / (baseCost) + 1));
+      
+      if (n > 0) {
+        const newRebirths = rebirths + n;
+        setCount(0);
+        setOwnedUpgrades(Object.fromEntries(UPGRADES.map((u) => [u.id, 0])));
+        setRebirths(newRebirths);
+        saveGame({ 
+          count: 0, 
+          totalCount, 
+          ownedUpgrades: Object.fromEntries(UPGRADES.map((u) => [u.id, 0])), 
+          unlockedAchievements, 
+          isAdminMode, 
+          rebirths: newRebirths 
+        });
+        alert(`Congratulations! You have been reborn ${n} time(s). Your production bonus has increased!`);
+      }
+    }
+  };
+
   const formatNumber = (num) => {
-    if (num >= 1000000) return (num / 1000000).toFixed(2) + 'M';
-    if (num >= 1000) return (num / 1000).toFixed(1) + 'k';
-    return Math.floor(num).toLocaleString();
+    if (num < 1000) return Math.floor(num).toString();
+    
+    const suffixes = ['', 'k', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc', 'Ud', 'Dd', 'Td', 'Qad', 'Qid', 'Sxd', 'Spd', 'Ocd', 'Nod', 'Vg'];
+    const suffixIndex = Math.floor(Math.log10(num) / 3);
+    
+    if (suffixIndex >= suffixes.length) {
+      return num.toExponential(2);
+    }
+    
+    const shortValue = num / Math.pow(1000, suffixIndex);
+    return shortValue.toFixed(suffixIndex === 0 ? 0 : 2) + suffixes[suffixIndex];
   };
 
   const handleCodeSubmit = (e) => {
@@ -260,9 +335,57 @@ export default function App() {
       setIsAdminMode(true);
       setShowCodes(false);
       setCodeValue('');
-      saveGame({ count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode: true });
+      saveGame({ count, totalCount, ownedUpgrades, unlockedAchievements, isAdminMode: true, rebirths });
+    } else if (codeValue === 'salmon67') {
+      setShowWorldAdmin(true);
+      setShowCodes(false);
+      setCodeValue('');
     } else {
       alert('Invalid code!');
+    }
+  };
+
+  const triggerWorldEvent = async () => {
+    if (worldAdminPassword !== 'salmon67') {
+      alert("Invalid Password!");
+      return;
+    }
+    try {
+      const res = await fetch('/api/admin/trigger-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          password: worldAdminPassword,
+          multiplier: worldAdminForm.multiplier,
+          announcement: worldAdminForm.announcement,
+          type: worldAdminForm.type,
+          durationMinutes: worldAdminForm.duration
+        })
+      });
+      if (res.ok) {
+        alert("Global Event Triggered!");
+        setShowWorldAdmin(false);
+      } else {
+        alert("Failed to trigger event");
+      }
+    } catch (e) {
+      alert("Error contacting server");
+    }
+  };
+
+  const clearWorldEvent = async () => {
+    try {
+      const res = await fetch('/api/admin/clear-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: worldAdminPassword })
+      });
+      if (res.ok) {
+        alert("Event Cleared!");
+        setShowWorldAdmin(false);
+      }
+    } catch (e) {
+      alert("Error contacting server");
     }
   };
 
@@ -279,7 +402,33 @@ export default function App() {
 
   return (
     <div className="h-[100dvh] w-full bg-[#E0F7FA] text-[#004D40] font-['Segoe_UI',Roboto,Helvetica,Arial,sans-serif] selection:bg-[#FF8C69]/30 overflow-hidden flex flex-col items-center">
+      <AnimatePresence>
+        {globalEvent.active && globalEvent.type === 'salmon_rain' && (
+          <SalmonRain />
+        )}
+      </AnimatePresence>
+
       <div className="max-w-[1400px] w-full h-full p-3 md:p-6 flex flex-col gap-3 md:gap-4 box-border relative overflow-hidden">
+        
+        {/* Global Announcement Overlay */}
+        <AnimatePresence>
+          {globalEvent.active && globalEvent.announcement && (
+            <motion.div
+              initial={{ y: -100, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -100, opacity: 0 }}
+              className="absolute top-0 left-1/2 -translate-x-1/2 z-[500] bg-yellow-400 border-4 border-yellow-600 px-8 py-2 rounded-b-3xl shadow-xl flex items-center gap-4"
+            >
+              <Zap className="text-yellow-700 animate-pulse" />
+              <div className="text-sm md:text-lg font-black text-yellow-900 uppercase italic">
+                {globalEvent.announcement}
+              </div>
+              <div className="bg-yellow-100/50 px-2 rounded font-mono text-xs font-bold text-yellow-800">
+                {globalEvent.multiplier}x BOOST!
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         
         {/* Top Right Action Buttons */}
         <div className="absolute top-2 md:top-4 right-2 md:right-4 flex gap-2 z-[250]">
@@ -367,9 +516,28 @@ export default function App() {
             
             <div className="space-y-1">
               <StatRow label="Caught" value={formatNumber(totalCount)} icon={<Trophy className="w-3 h-3"/>} />
+              <StatRow label="Rebirths" value={rebirths} icon={<History className="w-3 h-3"/>} />
               <StatRow label="SPS" value={formatNumber(sps)} icon={<Zap className="w-3 h-3 text-yellow-500"/>} />
               <StatRow label="Rank" value={unlockedAchievements.length >= ACHIEVEMENTS.length ? 'Master' : 'Amateur'} icon={<Award className="w-3 h-3"/>} />
             </div>
+
+            {totalCount >= 1000000000 && (
+              <div className="mt-4 flex flex-col gap-2">
+                <div className="text-[10px] font-black text-[#006064] uppercase text-center opacity-60">Cycle of Life</div>
+                <button 
+                  onClick={performRebirth}
+                  disabled={count < (1000000000 * Math.pow(10, rebirths))}
+                  className={`py-2 px-4 rounded-xl border-2 font-black text-xs uppercase transition-all flex items-center justify-center gap-2 ${
+                    count >= (1000000000 * Math.pow(10, rebirths))
+                    ? 'bg-[#FF7043] border-white text-white shadow-[0_4px_0_#D84315] hover:scale-105 active:scale-95 active:shadow-none'
+                    : 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  <History className="w-3 h-3" />
+                  {count >= (1000000000 * Math.pow(10, rebirths) * 1.1) ? 'Rebirth Max' : `Rebirth (${formatNumber(1000000000 * Math.pow(10, rebirths))})`}
+                </button>
+              </div>
+            )}
 
             <div className="mt-4 bg-[#FFEE58] p-3 rounded-[8px] border-[2px] border-[#FBC02D] text-center shadow-inner">
                <div className="text-[12px] font-extrabold text-[#D84315]">X2 SEASONAL BONUS</div>
@@ -700,6 +868,114 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* World Admin Modal */}
+        <AnimatePresence>
+          {showWorldAdmin && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-[#004D40]/80 backdrop-blur-xl z-[450] flex items-center justify-center p-4"
+            >
+              <motion.div 
+                initial={{ scale: 0.9, y: 50 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 50 }}
+                className="bg-white p-6 md:p-8 rounded-[32px] border-[8px] border-yellow-400 shadow-[0_15px_0_#FBC02D] w-full max-w-lg"
+              >
+                <div className="flex justify-between items-center mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-yellow-100 rounded-2xl">
+                      <Zap className="w-8 h-8 text-yellow-600"/>
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-[950] text-[#006064] uppercase leading-none">World Admin</h3>
+                      <p className="text-[10px] font-black text-yellow-600 uppercase opacity-60">Global Event Control</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowWorldAdmin(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                    <X className="w-8 h-8 text-yellow-400"/>
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-[#006064] uppercase ml-1">Multiplier (X)</label>
+                      <input 
+                        type="number" 
+                        value={worldAdminForm.multiplier}
+                        onChange={(e) => setWorldAdminForm({...worldAdminForm, multiplier: e.target.value})}
+                        className="w-full p-3 bg-slate-50 border-4 border-slate-100 rounded-xl font-bold"
+                        placeholder="2"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black text-[#006064] uppercase ml-1">Duration (Min)</label>
+                      <input 
+                        type="number" 
+                        value={worldAdminForm.duration}
+                        onChange={(e) => setWorldAdminForm({...worldAdminForm, duration: e.target.value})}
+                        className="w-full p-3 bg-slate-50 border-4 border-slate-100 rounded-xl font-bold"
+                        placeholder="5"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-[#006064] uppercase ml-1">Announcement</label>
+                    <input 
+                      type="text" 
+                      value={worldAdminForm.announcement}
+                      onChange={(e) => setWorldAdminForm({...worldAdminForm, announcement: e.target.value})}
+                      className="w-full p-3 bg-slate-50 border-4 border-slate-100 rounded-xl font-bold"
+                      placeholder="THE SALMON ARE RAINING!"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-[#006064] uppercase ml-1">Event Type</label>
+                    <select 
+                      value={worldAdminForm.type}
+                      onChange={(e) => setWorldAdminForm({...worldAdminForm, type: e.target.value})}
+                      className="w-full p-3 bg-slate-50 border-4 border-slate-100 rounded-xl font-bold appearance-none"
+                    >
+                      <option value="none">Standard Multiplier</option>
+                      <option value="salmon_rain">Salmon Rain EFFECT</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1 pt-2">
+                    <label className="text-[10px] font-black text-[#006064] uppercase ml-1 text-red-500">Security Access Code</label>
+                    <input 
+                      type="password" 
+                      value={worldAdminPassword}
+                      onChange={(e) => setWorldAdminPassword(e.target.value)}
+                      className="w-full p-4 bg-red-50 border-4 border-red-100 rounded-2xl font-black text-center text-xl tracking-[0.5em]"
+                      placeholder="••••••••"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mt-6">
+                    <button 
+                      onClick={clearWorldEvent}
+                      className="py-4 bg-slate-200 text-slate-700 font-black rounded-2xl uppercase hover:bg-slate-300 transition-all"
+                    >
+                      Stop All
+                    </button>
+                    <button 
+                      onClick={triggerWorldEvent}
+                      className="py-4 bg-yellow-400 text-yellow-900 font-black rounded-2xl uppercase shadow-[0_6px_0_#FBC02D] hover:-translate-y-1 hover:shadow-[0_8px_0_#FBC02D] active:translate-y-1 active:shadow-none transition-all"
+                    >
+                      Go Global
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       </div>
 
       <style>{`
@@ -732,6 +1008,44 @@ function StatRow({ label, value, icon }) {
         {label}
       </div>
       <div className="font-[800] text-[14px] md:text-[16px] text-[#FF7043]">{value}</div>
+    </div>
+  );
+}
+
+function SalmonRain() {
+  const [salmons, setSalmons] = useState([]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setSalmons(prev => [
+        ...prev.slice(-15),
+        {
+          id: Math.random(),
+          left: Math.random() * 100,
+          duration: 3 + Math.random() * 4,
+          size: 30 + Math.random() * 40
+        }
+      ]);
+    }, 300);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="fixed inset-0 pointer-events-none z-[1000] overflow-hidden">
+      <AnimatePresence>
+        {salmons.map(s => (
+          <motion.div
+            key={s.id}
+            initial={{ y: -100, x: `${s.left}vw`, opacity: 0, rotate: 0 }}
+            animate={{ y: '110vh', opacity: [0, 1, 1, 0], rotate: 360 }}
+            transition={{ duration: s.duration, ease: "linear" }}
+            className="absolute"
+            style={{ fontSize: s.size }}
+          >
+            🐟
+          </motion.div>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }
