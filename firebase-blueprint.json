@@ -1,0 +1,23 @@
+{
+  "entities": {
+    "WorldEvent": {
+      "title": "World Event",
+      "description": "Global event state that affects all players.",
+      "type": "object",
+      "properties": {
+        "multiplier": { "type": "number" },
+        "announcement": { "type": "string" },
+        "type": { "type": "string" },
+        "active": { "type": "boolean" },
+        "endTime": { "type": "number", "description": "Timestamp in milliseconds" }
+      },
+      "required": ["multiplier", "announcement", "type", "active", "endTime"]
+    }
+  },
+  "firestore": {
+    "worldState/current": {
+      "schema": "WorldEvent",
+      "description": "The currently active world event state."
+    }
+  }
+}

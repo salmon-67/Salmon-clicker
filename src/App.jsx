@@ -7,6 +7,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Fish, TrendingUp, ShoppingCart, Info, Zap, Waves, History, Trophy, X, Award, ChevronRight, LayoutPanelLeft } from 'lucide-react';
 import { UPGRADES, NEWS_HEADLINES, ACHIEVEMENTS } from './constants';
+import { db, initFirebase } from './lib/firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 const SAVE_KEY = 'salmon_clicker_save';
 
@@ -34,6 +36,7 @@ export default function App() {
   const [globalEvent, setGlobalEvent] = useState({ multiplier: 1, announcement: "", type: "none", active: false });
   const [showWorldAdmin, setShowWorldAdmin] = useState(false);
   const [worldAdminForm, setWorldAdminForm] = useState({ multiplier: 2, announcement: 'RAINING SALMON!', type: 'salmon_rain', duration: 5 });
+  const [timeLeft, setTimeLeft] = useState("");
 
   // --- Persistence ---
   const saveGame = useCallback((forceData) => {
@@ -59,21 +62,46 @@ export default function App() {
     }
   }, []);
 
-  // --- Server Polling for Global Events ---
+  // --- Server Sync for Global Events ---
   useEffect(() => {
-    const fetchGlobalEvent = async () => {
-      try {
-        const res = await fetch('/api/global-event');
-        const data = await res.json();
-        setGlobalEvent(data);
-      } catch (e) {
-        // Silently fail if server is still starting
+    initFirebase();
+    const eventDoc = doc(db, 'worldState', 'current');
+    const unsubscribe = onSnapshot(eventDoc, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        // Check for expiration
+        if (data.active && Date.now() > data.endTime) {
+          // Local auto-clear if expired
+          setGlobalEvent({ multiplier: 1, announcement: "", type: "none", active: false });
+        } else {
+          setGlobalEvent(data);
+        }
       }
-    };
-    fetchGlobalEvent();
-    const timer = setInterval(fetchGlobalEvent, 5000);
-    return () => clearInterval(timer);
+    }, (error) => {
+      console.error("Firestore Error:", error);
+    });
+    return () => unsubscribe();
   }, []);
+
+  // Timer logic for global event
+  useEffect(() => {
+    let interval;
+    if (globalEvent.active && globalEvent.endTime) {
+      interval = setInterval(() => {
+        const remaining = globalEvent.endTime - Date.now();
+        if (remaining <= 0) {
+          setTimeLeft("0:00");
+          // Local clear if it hits 0
+          if (globalEvent.active) setGlobalEvent(prev => ({ ...prev, active: false }));
+        } else {
+          const mins = Math.floor(remaining / 60000);
+          const secs = Math.floor((remaining % 60000) / 1000);
+          setTimeLeft(`${mins}:${secs.toString().padStart(2, '0')}`);
+        }
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [globalEvent]);
 
   // Auto-save every 10 seconds or on important actions
   useEffect(() => {
@@ -351,53 +379,38 @@ export default function App() {
 
   const triggerWorldEvent = async () => {
     try {
-      const res = await fetch('/api/events/trigger', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          password: 'salmon67',
-          multiplier: worldAdminForm.multiplier,
-          announcement: worldAdminForm.announcement,
-          type: worldAdminForm.type,
-          durationMinutes: worldAdminForm.duration
-        })
+      const eventDoc = doc(db, 'worldState', 'current');
+      const endTime = Date.now() + parseInt(worldAdminForm.duration) * 60 * 1000;
+      
+      await setDoc(eventDoc, {
+        multiplier: parseFloat(worldAdminForm.multiplier) || 1,
+        announcement: worldAdminForm.announcement,
+        type: worldAdminForm.type,
+        active: true,
+        endTime: endTime
       });
-      if (res.ok) {
-        const data = await res.json();
-        alert("Global Event Triggered!");
-        setShowWorldAdmin(false);
-      } else {
-        const text = await res.text();
-        let errorMsg = "Check server status";
-        try {
-          const data = JSON.parse(text);
-          errorMsg = data.error || errorMsg;
-        } catch(e) {
-          errorMsg = "Non-JSON response: " + text.substring(0, 50);
-        }
-        alert(`Failed to trigger event (Status ${res.status}): ${errorMsg}`);
-      }
+      
+      alert("Global Event Triggered in the cloud!");
+      setShowWorldAdmin(false);
     } catch (e) {
-      alert("Error contacting server: " + e.message);
+      alert("Error triggering cloud event: " + e.message);
     }
   };
 
   const clearWorldEvent = async () => {
     try {
-      const res = await fetch('/api/events/clear', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: 'salmon67' })
+      const eventDoc = doc(db, 'worldState', 'current');
+      await setDoc(eventDoc, {
+        multiplier: 1,
+        announcement: "",
+        type: "none",
+        active: false,
+        endTime: 0
       });
-      if (res.ok) {
-        alert("Event Cleared!");
-        setShowWorldAdmin(false);
-      } else {
-        const text = await res.text();
-        alert(`Failed to clear (Status ${res.status}): ${text.substring(0, 50)}`);
-      }
+      alert("Event Cleared from cloud!");
+      setShowWorldAdmin(false);
     } catch (e) {
-      alert("Error contacting server: " + e.message);
+      alert("Error clearing cloud event: " + e.message);
     }
   };
 
@@ -436,8 +449,15 @@ export default function App() {
               <div className="text-sm md:text-lg font-black text-yellow-900 uppercase italic">
                 {globalEvent.announcement}
               </div>
-              <div className="bg-yellow-100/50 px-2 rounded font-mono text-xs font-bold text-yellow-800">
-                {globalEvent.multiplier}x BOOST!
+              <div className="flex gap-2">
+                <div className="bg-yellow-100/50 px-2 rounded font-mono text-xs font-bold text-yellow-800 flex flex-col items-center min-w-[60px]">
+                  <span className="text-[10px] opacity-70 leading-none">BOOST</span>
+                  <span>{globalEvent.multiplier}x</span>
+                </div>
+                <div className="bg-yellow-100/50 px-2 rounded font-mono text-xs font-bold text-yellow-800 flex flex-col items-center min-w-[60px]">
+                  <span className="text-[10px] opacity-70 leading-none">ENDS IN</span>
+                  <span>{timeLeft}</span>
+                </div>
               </div>
             </motion.div>
           )}

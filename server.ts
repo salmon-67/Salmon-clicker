@@ -29,56 +29,6 @@ async function startServer() {
 
   app.get("/ping", (req, res) => res.send("pong"));
 
-  // Global game state
-  let globalEvent = {
-    multiplier: 1,
-    announcement: "",
-    type: "none",
-    active: false,
-    endTime: 0
-  };
-
-  const apiRouter = express.Router();
-
-  apiRouter.get("/global-event", (req, res) => {
-    if (globalEvent.active && Date.now() > globalEvent.endTime) {
-      globalEvent = { multiplier: 1, announcement: "", type: "none", active: false, endTime: 0 };
-    }
-    res.json(globalEvent);
-  });
-
-  apiRouter.get("/events/trigger", (req, res) => {
-    res.json({ message: "API Trigger reachable" });
-  });
-
-  apiRouter.post("/events/trigger", (req, res) => {
-    const { password, multiplier, announcement, type, durationMinutes } = req.body;
-    if (password !== "salmon67") {
-      return res.status(403).json({ error: "Invalid password" });
-    }
-
-    const m = parseFloat(multiplier);
-    const d = parseInt(durationMinutes);
-
-    globalEvent = {
-      multiplier: isNaN(m) ? 1 : m,
-      announcement: announcement || "",
-      type: type || "none",
-      active: true,
-      endTime: Date.now() + (isNaN(d) ? 5 : d) * 60 * 1000
-    };
-    res.json({ success: true, event: globalEvent });
-  });
-
-  apiRouter.post("/events/clear", (req, res) => {
-    if (req.body.password !== "salmon67") return res.status(403).json({ error: "Invalid password" });
-    globalEvent = { multiplier: 1, announcement: "", type: "none", active: false, endTime: 0 };
-    res.json({ success: true });
-  });
-
-  // Mount API router FIRST
-  app.use("/api", apiRouter);
-
   // Production Setup - Support automated environments
   const isProd = process.env.NODE_ENV === "production" || process.env.SHARED === "true";
   if (isProd) {
@@ -87,7 +37,7 @@ async function startServer() {
     
     app.use(express.static(distPath));
     app.get('*', (req, res) => {
-      if (!req.url.startsWith('/api')) {
+      if (!req.url.startsWith('/events-api')) {
         res.sendFile(path.resolve(distPath, 'index.html'));
       } else {
         console.log(`API 404 falling through to catch-all: ${req.url}`);
