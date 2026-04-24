@@ -495,15 +495,17 @@ export default function App() {
     e.preventDefault();
     if (!authForm.username || !authForm.passcode) return alert("Fill all fields");
 
-    const userDoc = doc(db, 'users', authForm.username);
+    // Enforce lowercase usernames for true uniqueness
+    const normalizedUsername = authForm.username.trim().toLowerCase();
+    const userDoc = doc(db, 'users', normalizedUsername);
     
     try {
       if (authMode === 'register') {
         const snap = await getDoc(userDoc);
-        if (snap.exists()) return alert("Username taken!");
+        if (snap.exists()) return alert("Username already taken! Try another one.");
         
         const initialData = {
-          username: authForm.username,
+          username: normalizedUsername,
           passcode: authForm.passcode,
           count, totalCount, ownedUpgrades, unlockedAchievements, rebirths,
           lastSaved: Date.now()
